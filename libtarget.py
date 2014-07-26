@@ -1,19 +1,21 @@
+import itertools
+
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.patches import Ellipse
-
+import docopt
 
 class ellipse:
     def __init__(self, x, y, Ma, ma, angle):
         self.x = x
         self.y = y
-        self.Ma = Ma
-        self.ma = ma
+        self.Ma = max(Ma, ma)
+        self.ma = min(Ma, ma)
         self.angle = angle
 
-    def isCloseTo(self, other, err=0.5):
+    def isCloseTo(self, other, err=5):
         ''' Returns True if ellipse is within 0.5 pixels of given ellipse
         '''
         if abs(self.x - other.x) < err:
@@ -21,7 +23,7 @@ class ellipse:
                 return True
         return False
 
-    def hasSameRotation(self, other, err=0.0001):
+    def hasSameRotation(self, other, err=10):
         ''' Returns True if ellipse is has the same rotation as other
         '''
 
@@ -47,6 +49,11 @@ class ellipse:
 
         return False
 
+    def __str__(self):
+        _str = "x: {x}\ny: {y}\nMa: {Ma}\nma: {ma}\nangle: {ang}".format(
+            x=self.x, y=self.y, Ma=self.Ma, ma=self.ma, ang=self.angle)
+        return _str
+
 
 def get_contours(img):
     ''' Get contours in given image
@@ -64,8 +71,8 @@ def get_contours(img):
 
 def get_threshold(img):
 
-    ret, thresh = cv2.threshold(img, 127, 255, 0)
-
+    thresh = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                   cv2.THRESH_BINARY, 21, 5)
     return thresh
 
 
@@ -78,11 +85,11 @@ def filter_ellipses(ellipses):
     # TODO Filter out
     #  weed out some spurious ellipses
 
-    MaMax = 100
-    maMax = 100
+    MaMax = 50
+    maMax = 50
     MaMin = 4
-    maMin = 4
-    Ma_ma = 4
+    maMin = 3
+    Ma_ma = 5
 
     for i, ell in enumerate(ellipses):
         Ma, ma = ell[1]
@@ -123,18 +130,22 @@ def find_rad_targets(ellipses):
     # for each ellipse, find the closest in position which is smaller in both
     # axes and has a similar angle
 
-    for i, ell1 in enumerate(ellipses):
-        (x, y), (Ma, ma), angle = ell1
-        ellipse1 = ellipse(x, y, Ma, ma, angle)
-        for j, ell2 in enumerate(ellipses[i + 1:]):
-            (x, y), (Ma, ma), angle = ell1
-            ellipse2 = ellipse(x, y, Ma, ma, angle)
-            # now check if they are in fact 'concentric'
-            if ellipse1.isConcentricTo(ellipse2):
-                if ellipse1.isSmallerThan(ellipse2):
-                    rad_targets.append([ellipse1, ellipse2])
-                else:
-                    rad_targets.append([ellipse2, ellipse1])
+    ellipse_pairs = itertools.combinations(ellipses, 2)
+
+    for ell1, ell2 in ellipse_pairs:
+        (x1, y1), (Ma1, ma1), ang1 = ell1
+        (x2, y2), (Ma2, ma2), ang2 = ell2
+        ellipse1 = ellipse(x1, y1, Ma1, ma1, ang1)
+        ellipse2 = ellipse(x2, y2, Ma2, ma2, ang2)
+        # now check if they are in fact 'concentric'
+        if ellipse1.isCloseTo(ellipse2):
+            if ellipse1.isSmallerThan(ellipse2):
+                if 3.5 < (ellipse2.Ma / ellipse1.Ma) < 5:
+                    rad_targets.append((ellipse1, ellipse2))
+            else:
+                if 3.5 < (ellipse1.Ma / ellipse2.Ma) < 5:
+                    rad_targets.append((ellipse2, ellipse1))
+
     return rad_targets
 
 
@@ -159,8 +170,6 @@ def find_ellipses(contours):
             if len(newcnt) > 5:
                 # (x,y), (Ma, ma), angle = cv2.fitEllipse(hull)
                 ellipse = cv2.fitEllipse(np.array(newcnt))
-                (x, y), (Ma, ma), angle = ellipse
-
                 ellipses.append(ellipse)
                 hulls.append(hulls)
 
@@ -176,30 +185,37 @@ def find_edges(img):
     return edges
 
 
-if __name__ == "__main__":
+__doc__ = '''\
+Usage: libtargets.py JPG
+'''
 
-    img = cv2.imread('radtargets/rad250.jpg', 0)
+if __name__ == "__main__":
+    arguments = docopt.docopt(__doc__)
+    if 'JPG' in arguments:
+        img = cv2.imread(arguments['JPG'], 0)
     thresh = get_threshold(img)
     edges = find_edges(thresh)
     contours = get_contours(edges)
     ellipses, hulls = find_ellipses(contours)
     radtargets = find_rad_targets(ellipses)
-    print len(ellipses)
-    print len(radtargets)
+    print("Found {N} rad-target candidates!".format(N=len(radtargets)))
 
+
+    #
+    # Make some plots
+    # 
     fig = plt.figure(figsize=(12, 12))
-    fig.add_subplot(121, aspect='equal')
+    ax1 = fig.add_subplot(121, aspect='equal')
     plt.imshow(img, cmap=cm.gray, interpolation='nearest')
 
-    for cnt in contours:
-        cnt = np.array(cnt)
-        x = cnt[:, 0][:, 0]
-        y = cnt[:, 0][:, 1]
-
-        np.append(x, x[0])
-        np.append(y, y[0])
-
-        plt.plot(x, y)
+    for rt in radtargets:
+        ell1, ell2 = rt
+        e1 = Ellipse((ell1.x, ell1.y), ell1.Ma, ell1.ma, ell1.angle+90,
+                      facecolor='none', edgecolor='r')
+        e2 = Ellipse((ell2.x, ell2.y), ell2.Ma, ell2.ma, ell2.angle+90,
+                      facecolor='none', edgecolor='r')
+        ax1.add_artist(e1)
+        ax1.add_artist(e2)
 
     ax = fig.add_subplot(122, aspect='equal')
     plt.imshow(edges, cmap=cm.gray, interpolation='nearest')
