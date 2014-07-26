@@ -7,6 +7,7 @@ import matplotlib.cm as cm
 from matplotlib.patches import Ellipse
 import docopt
 
+
 class ellipse:
     def __init__(self, x, y, Ma, ma, angle):
         self.x = x
@@ -15,7 +16,7 @@ class ellipse:
         self.ma = min(Ma, ma)
         self.angle = angle
 
-    def isCloseTo(self, other, err=5):
+    def isCloseTo(self, other, err=1):
         ''' Returns True if ellipse is within 0.5 pixels of given ellipse
         '''
         if abs(self.x - other.x) < err:
@@ -70,9 +71,9 @@ def get_contours(img):
 
 
 def get_threshold(img):
-
-    thresh = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                   cv2.THRESH_BINARY, 21, 5)
+    blur = cv2.bilateralFilter(img, 9, 75, 75)
+    thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                   cv2.THRESH_BINARY_INV, 31, 2)
     return thresh
 
 
@@ -180,49 +181,52 @@ def find_edges(img):
     ''' Find edges in the given image
     '''
 
-    edges = cv2.Canny(img, 100, 200)
+    edges = cv2.Canny(img, 100, 255, 31)
 
     return edges
 
 
 __doc__ = '''\
-Usage: libtargets.py JPG
+Usage: libtargets.py JPG... [--plot]
 '''
 
 if __name__ == "__main__":
     arguments = docopt.docopt(__doc__)
-    if 'JPG' in arguments:
-        img = cv2.imread(arguments['JPG'], 0)
-    thresh = get_threshold(img)
-    edges = find_edges(thresh)
-    contours = get_contours(edges)
-    ellipses, hulls = find_ellipses(contours)
-    radtargets = find_rad_targets(ellipses)
-    print("Found {N} rad-target candidates!".format(N=len(radtargets)))
+    for jpg in arguments['JPG']:
+        print("Finding radtargets in {f}".format(f=jpg))
+        img = cv2.imread(jpg, 0)
+        thresh = get_threshold(img)
+       #thresh = img
+        edges = find_edges(thresh)
+        contours = get_contours(edges)
+        ellipses, hulls = find_ellipses(contours)
+        radtargets = find_rad_targets(ellipses)
+        print("    Found {N} rad-target candidates!".format(N=len(radtargets)))
 
+        #
+        # Make some plots
+        #
+        if arguments['--plot']:
+            fig = plt.figure(figsize=(12, 12))
+            ax1 = fig.add_subplot(121, aspect='equal')
+            plt.imshow(img, cmap=cm.gray, interpolation='nearest')
 
-    #
-    # Make some plots
-    # 
-    fig = plt.figure(figsize=(12, 12))
-    ax1 = fig.add_subplot(121, aspect='equal')
-    plt.imshow(img, cmap=cm.gray, interpolation='nearest')
+            for rt in radtargets:
+                ell1, ell2 = rt
+                e1 = Ellipse((ell1.x, ell1.y), ell1.Ma, ell1.ma, ell1.angle+90,
+                             facecolor='none', edgecolor='r')
+                e2 = Ellipse((ell2.x, ell2.y), ell2.Ma, ell2.ma, ell2.angle+90,
+                             facecolor='none', edgecolor='r')
+                ax1.add_artist(e1)
+                ax1.add_artist(e2)
 
-    for rt in radtargets:
-        ell1, ell2 = rt
-        e1 = Ellipse((ell1.x, ell1.y), ell1.Ma, ell1.ma, ell1.angle+90,
-                      facecolor='none', edgecolor='r')
-        e2 = Ellipse((ell2.x, ell2.y), ell2.Ma, ell2.ma, ell2.angle+90,
-                      facecolor='none', edgecolor='r')
-        ax1.add_artist(e1)
-        ax1.add_artist(e2)
+            ax = fig.add_subplot(122, aspect='equal')
+            plt.imshow(thresh, cmap=cm.gray, interpolation='nearest',
+                       vmin=0, vmax=55)
 
-    ax = fig.add_subplot(122, aspect='equal')
-    plt.imshow(edges, cmap=cm.gray, interpolation='nearest')
+            for ell in ellipses:
+                (x, y), (Ma, ma), angle = ell
+                ell = Ellipse([x, y], Ma, ma, angle, facecolor='none', edgecolor='r')
+                ax.add_artist(ell)
 
-    for ell in ellipses:
-        (x, y), (Ma, ma), angle = ell
-        ell = Ellipse([x, y], Ma, ma, angle, facecolor='none', edgecolor='r')
-        ax.add_artist(ell)
-
-    plt.show()
+            plt.show()
