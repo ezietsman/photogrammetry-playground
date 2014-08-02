@@ -137,7 +137,7 @@ class Image(object):
 
         return contours
 
-    def find_square_contours(self, epsilon=0.05, min_area=200, max_area=4000):
+    def find_square_contours(self, epsilon=0.1, min_area=200, max_area=4000):
         ''' Find the ones that is approximately square
         '''
 
