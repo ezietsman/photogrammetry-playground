@@ -289,6 +289,21 @@ def find_rad_encoding(img, radtarget, plot=False):
     return encoding
 
 
+def find_square_contours(contours, epsilon=0.2, min_area=200):
+    ''' Given a list of contours, find the ones that is approximately square
+    '''
+    squares = []
+    for cnt in contours:
+        area = abs(cv2.contourArea(cnt))
+        err = epsilon*cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, err, True)
+
+        if (approx.size == 4) & (area > min_area):
+            squares.append(cnt)
+
+    return squares
+
+
 def find_rad_targets2(img, ellipses):
     ''' Find rad targets using a different algorithm
     For every ellipse find the outer ring and see if it has one and only
@@ -337,6 +352,8 @@ if __name__ == "__main__":
         thresh = get_threshold(img)
         edges = find_edges(thresh)
         contours = get_contours(thresh)
+        squares = find_square_contours(contours)
+        print("Found {N} squares".format(N=len(squares)))
         ellipses, hulls = find_ellipses(contours)
         temp = []
         for ell in ellipses:
@@ -345,7 +362,6 @@ if __name__ == "__main__":
         ellipses = temp
         ellipses = filter_ellipses(ellipses)
         print("    Found {N} possible targets!".format(N=len(ellipses)))
-
         radtargets = find_rad_targets(ellipses)
         print("    Found {N} rad-target candidates!".format(N=len(radtargets)))
         encodings = [find_rad_encoding(thresh, rt) for rt in radtargets]
@@ -361,7 +377,8 @@ if __name__ == "__main__":
 
             for r, rt in enumerate(radtargets):
                 ell1, ell2 = rt
-                plt.text(ell1.x, ell1.y, s=encodings[r], fontsize=12, color='red')
+                plt.text(ell1.x, ell1.y, s=encodings[r], fontsize=12,
+                         color='red')
 
                 e1 = Ellipse((ell1.x, ell1.y), ell1.Ma, ell1.ma, ell1.angle+90,
                              facecolor='none', edgecolor='r')
@@ -370,11 +387,21 @@ if __name__ == "__main__":
                 ax1.add_artist(e1)
                 ax1.add_artist(e2)
 
+            for sq in squares:
+                M = cv2.moments(sq)
+                sx = int(M['m10']/M['m00'])
+                sy = int(M['m01']/M['m00'])
+
+                plt.scatter(sx, sy, marker='s', s=20,
+                            facecolor='none',
+                            edgecolor='blue')
+
             ax = fig.add_subplot(122, aspect='equal')
             plt.imshow(thresh, cmap=cm.gray, interpolation='nearest')
 
             for ell in ellipses:
-                ell = Ellipse([ell.x, ell.y], ell.Ma, ell.ma, ell.angle, facecolor='none',
+                ell = Ellipse([ell.x, ell.y], ell.Ma, ell.ma, ell.angle,
+                              facecolor='none',
                               edgecolor='r')
                 ax.add_artist(ell)
 
