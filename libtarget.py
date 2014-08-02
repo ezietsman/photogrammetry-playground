@@ -8,6 +8,8 @@ import matplotlib.cm as cm
 from matplotlib.patches import Ellipse
 import docopt
 
+from libphotogrammetry.Image import Image
+
 
 class ellipse:
     def __init__(self, x, y, Ma, ma, angle):
@@ -298,8 +300,11 @@ def find_square_contours(contours, epsilon=0.2, min_area=200):
         err = epsilon*cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, err, True)
 
-        if (approx.size == 4) & (area > min_area):
-            squares.append(cnt)
+        if not((approx.size == 4) & (area > min_area)):
+            continue
+        vertices = []
+        import ipdb; ipdb.set_trace()
+        squares.append(cnt)
 
     return squares
 
@@ -348,62 +353,65 @@ if __name__ == "__main__":
     arguments = docopt.docopt(__doc__)
     for jpg in arguments['JPG']:
         print("Finding RAD targets in {f}".format(f=jpg))
-        img = cv2.imread(jpg, 0)
-        thresh = get_threshold(img)
-        edges = find_edges(thresh)
-        contours = get_contours(thresh)
-        squares = find_square_contours(contours)
-        print("Found {N} squares".format(N=len(squares)))
-        ellipses, hulls = find_ellipses(contours)
-        temp = []
-        for ell in ellipses:
-            (x, y), (Ma, ma), angle = ell
-            temp.append(ellipse(x, y, Ma, ma, angle))
-        ellipses = temp
-        ellipses = filter_ellipses(ellipses)
-        print("    Found {N} possible targets!".format(N=len(ellipses)))
-        radtargets = find_rad_targets(ellipses)
-        print("    Found {N} rad-target candidates!".format(N=len(radtargets)))
-        encodings = [find_rad_encoding(thresh, rt) for rt in radtargets]
-        if len(encodings) != len(set(encodings)):
-            print "    Duplicate RAD encodings in output!"
+        image = Image(jpg)
+        image.find_RAD_targets()
+#       thresh = get_threshold(img)
+#       edges = find_edges(thresh)
+#       contours = get_contours(thresh)
+#       squares = find_square_contours(contours)
+#       print("Found {N} squares".format(N=len(squares)))
+#       ellipses, hulls = find_ellipses(contours)
+#       temp = []
+#       for ell in ellipses:
+#           (x, y), (Ma, ma), angle = ell
+#           temp.append(ellipse(x, y, Ma, ma, angle))
+#       ellipses = temp
+#       ellipses = filter_ellipses(ellipses)
+#       print("    Found {N} possible targets!".format(N=len(ellipses)))
+#       radtargets = find_rad_targets(ellipses)
+#       print("    Found {N} rad-target candidates!".format(N=len(radtargets)))
+#       encodings = [find_rad_encoding(thresh, rt) for rt in radtargets]
+#       if len(encodings) != len(set(encodings)):
+#           print "    Duplicate RAD encodings in output!"
         #
         # Make some plots
         #
         if arguments['--plot'] or arguments['--save']:
             fig = plt.figure(figsize=(12, 12))
-            ax1 = fig.add_subplot(121, aspect='equal')
-            plt.imshow(img, cmap=cm.gray, interpolation='nearest')
+            ax1 = fig.add_subplot(111, aspect='equal')
+            plt.imshow(image.image, cmap=cm.gray, interpolation='nearest')
 
-            for r, rt in enumerate(radtargets):
-                ell1, ell2 = rt
-                plt.text(ell1.x, ell1.y, s=encodings[r], fontsize=12,
-                         color='red')
+#           for r, rt in enumerate(radtargets):
+#               ell1, ell2 = rt
+#               plt.text(ell1.x, ell1.y, s=encodings[r], fontsize=12,
+#                        color='red')
 
-                e1 = Ellipse((ell1.x, ell1.y), ell1.Ma, ell1.ma, ell1.angle+90,
-                             facecolor='none', edgecolor='r')
-                e2 = Ellipse((ell2.x, ell2.y), ell2.Ma, ell2.ma, ell2.angle+90,
-                             facecolor='none', edgecolor='r')
-                ax1.add_artist(e1)
-                ax1.add_artist(e2)
+#               e1 = Ellipse((ell1.x, ell1.y), ell1.Ma, ell1.ma, ell1.angle+90,
+#                            facecolor='none', edgecolor='r')
+#               e2 = Ellipse((ell2.x, ell2.y), ell2.Ma, ell2.ma, ell2.angle+90,
+#                            facecolor='none', edgecolor='r')
+#               ax1.add_artist(e1)
+#               ax1.add_artist(e2)
 
-            for sq in squares:
-                M = cv2.moments(sq)
-                sx = int(M['m10']/M['m00'])
-                sy = int(M['m01']/M['m00'])
+            for sq in image.square_contours:
+                vertices = sq.vertices
+                vertices = np.append(vertices, vertices[0]).reshape((5,2))
+                plt.plot(vertices[:,0], vertices[:,1], 'b-')
 
-                plt.scatter(sx, sy, marker='s', s=20,
-                            facecolor='none',
-                            edgecolor='blue')
-
-            ax = fig.add_subplot(122, aspect='equal')
-            plt.imshow(thresh, cmap=cm.gray, interpolation='nearest')
-
-            for ell in ellipses:
-                ell = Ellipse([ell.x, ell.y], ell.Ma, ell.ma, ell.angle,
+            for ell in image.ellipses:
+                (x, y), (Ma, ma), angle = ell
+                ell = Ellipse([x, y], Ma, ma, angle,
                               facecolor='none',
                               edgecolor='r')
-                ax.add_artist(ell)
+                ax1.add_artist(ell)
+#           ax = fig.add_subplot(122, aspect='equal')
+#           plt.imshow(thresh, cmap=cm.gray, interpolation='nearest')
+
+#           for ell in ellipses:
+#               ell = Ellipse([ell.x, ell.y], ell.Ma, ell.ma, ell.angle,
+#                             facecolor='none',
+#                             edgecolor='r')
+#               ax.add_artist(ell)
 
         if arguments['--save']:
             plt.savefig('test.png'.format(
