@@ -11,52 +11,6 @@ import docopt
 from libphotogrammetry.Image import Image
 
 
-class ellipse:
-    def __init__(self, x, y, Ma, ma, angle):
-        self.x = x
-        self.y = y
-        self.Ma = max(Ma, ma)
-        self.ma = min(Ma, ma)
-        self.angle = angle
-
-    def isCloseTo(self, other, err=1):
-        ''' Returns True if ellipse is within 0.5 pixels of given ellipse
-        '''
-        if abs(self.x - other.x) < err:
-            if abs(self.y - other.y) < err:
-                return True
-        return False
-
-    def hasSameRotation(self, other, err=10):
-        ''' Returns True if ellipse is has the same rotation as other
-        '''
-
-        if abs(self.angle - other.angle) < err:
-            return True
-
-        return False
-
-    def isSmallerThan(self, other):
-        ''' Return True if both axes are smaller than other ellipse's '''
-        if self.Ma < other.Ma:
-            if self.ma < other.ma:
-                return True
-
-        return False
-
-    def isConcentricTo(self, other):
-        ''' similar position, and rotation
-        '''
-        if self.isCloseTo(other):
-            if self.hasSameRotation(other):
-                return True
-
-        return False
-
-    def __str__(self):
-        _str = "x: {x}\ny: {y}\nMa: {Ma}\nma: {ma}\nangle: {ang}".format(
-            x=self.x, y=self.y, Ma=self.Ma, ma=self.ma, ang=self.angle)
-        return _str
 
 
 def get_contours(img):
@@ -174,46 +128,6 @@ def find_edges(img):
     return edges
 
 
-def find_imval_at_ellipse_coordinates(img, ellipse, n=100):
-    ''' Given rotated ellipse, return n coordinates along its perimeter '''
-    # x=acos(theta) y=bsin(theta)
-    theta = (ellipse.angle + 90)*np.pi/180.
-    angles = np.linspace(0, 2*np.pi, n)
-    # center of ellipse
-    x0, y0 = ellipse.x, ellipse.y
-
-    x = ellipse.Ma/2.0*np.cos(angles)
-    y = ellipse.ma/2.0*np.sin(angles)
-
-    xy = np.array([(x[i], y[i]) for i, xx in enumerate(x)]).T
-    # rotation matrix
-    rotMat = np.array([[np.sin(theta), -1.0*np.cos(theta)],
-                       [np.cos(theta), np.sin(theta)]])
-
-    rotatedXY = np.dot(rotMat, xy).T
-
-    rotatedXY[:, 0] += y0
-    rotatedXY[:, 1] += x0
-    # round to ints
-    rotatedXY = np.around(rotatedXY, 0)
-
-    # find image values
-    imval = []
-    for row in rotatedXY:
-        x, y = row[0], row[1]
-        try:
-            imval.append(img[x, y])
-        except IndexError:
-            imval.append(0)
-
-    imval = np.array(imval)
-    # regions are either high or low. make high regions = 255 and low
-    # regions == 1.0
-    imval_max = imval.max()
-
-    imval[imval > 0.25*imval_max] = 255
-    imval[imval <= 0.25*imval_max] = 0
-    return rotatedXY, angles, np.array(imval)
 
 
 def find_rad_encoding(img, radtarget, plot=False):
@@ -291,24 +205,6 @@ def find_rad_encoding(img, radtarget, plot=False):
     return encoding
 
 
-def find_square_contours(contours, epsilon=0.05, min_area=200):
-    ''' Given a list of contours, find the ones that is approximately square
-    '''
-    squares = []
-    for cnt in contours:
-        area = abs(cv2.contourArea(cnt))
-        err = epsilon*cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, err, True)
-
-        if not((approx.size == 4) & (area > min_area)):
-            continue
-        vertices = []
-        import ipdb; ipdb.set_trace()
-        squares.append(cnt)
-
-    return squares
-
-
 def find_rad_targets2(img, ellipses):
     ''' Find rad targets using a different algorithm
     For every ellipse find the outer ring and see if it has one and only
@@ -354,19 +250,21 @@ if __name__ == "__main__":
     for jpg in arguments['JPG']:
         print("Finding RAD targets in {f}".format(f=jpg))
         image = Image(jpg)
-        image.find_RAD_targets()
+        image.find_targets()
+
+        print("    found {n} RAD targets!".format(n=len(image.radtargets)))
 
         if arguments['--plot'] or arguments['--save']:
             fig = plt.figure(figsize=(12, 12))
             ax1 = fig.add_subplot(111, aspect='equal')
             plt.imshow(image.image, cmap=cm.gray, interpolation='nearest')
 
-            for sq in image.square_contours:
-                vertices = sq.vertices
-                vertices = np.append(vertices, vertices[0]).reshape((5,2))
-                plt.plot(vertices[:,0], vertices[:,1], 'b-')
+#           for sq in image.square_contours:
+#               vertices = sq.vertices
+#               vertices = np.append(vertices, vertices[0]).reshape((5,2))
+#               plt.plot(vertices[:,0], vertices[:,1], 'b-')
 
-            for ell in image.ellipses:
+            for ell in image.radtargets:
                 (x, y), (Ma, ma), angle = ell
                 ell = Ellipse([x, y], Ma, ma, angle,
                               facecolor='none',

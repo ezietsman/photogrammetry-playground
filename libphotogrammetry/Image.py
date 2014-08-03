@@ -3,8 +3,11 @@ import copy
 import cv2
 import numpy as np
 import scipy.spatial
+import matplotlib.pyplot as plt
+import matplotlib
+import matplotlib.patches
 
-from Target import Square
+from Target import Square, ellipse
 
 
 class Image(object):
@@ -44,7 +47,69 @@ class Image(object):
 
         return kdtree
 
-    def find_RAD_targets(self):
+    def find_rad_encoding(self, img, radtarget, plot=False):
+        ''' given an image and a rad target ellipse pair, find the encoding used
+
+        return as a string containing 1 and 0 i.e. encoding='101010101010'
+
+        '''
+        (x, y), (Ma, ma), angle = radtarget
+        ring = ellipse(x, y, Ma, ma, angle)
+
+        pouter, theta_outer, imval_outer =\
+            self.find_imval_at_ellipse_coordinates(img, ring, n=200)
+
+        try:
+            # get the angles where the image value along the ellipse is zero
+            theta_min = np.min(theta_outer[imval_outer == 0]*180/np.pi)
+            # find the index of the smallest angle where this is true
+            start = np.where(theta_outer*180/np.pi == theta_min)[0][0]
+            # now roll the array so that it start at that index
+            imval_outer = np.roll(imval_outer, -start)
+            imval_outer_split = np.array_split(imval_outer, 12)
+            # now split that array into 12 nearly equally sized pieces
+            # the median value should be either 255 or 0, calculate the encoding
+            for i, segment in enumerate(imval_outer_split):
+                if np.median(segment) == 255:
+                    imval_outer_split[i] = '1'
+                else:
+                    imval_outer_split[i] = '0'
+            encoding = ''.join(imval_outer_split)
+        except ValueError as ve:
+            #print ve
+            encoding = '999999999999'
+
+        # some bug fixing plots
+        if plot:
+            fig = plt.figure(figsize=(12, 12))
+            ax1 = fig.add_subplot(111, aspect='equal')
+            intMa = int(Ma)
+            plt.imshow(img, cmap=matplotlib.cm.gray, interpolation='nearest')
+            ell1 = radtarget
+            e1 = matplotlib.patches.Ellipse((x, y), Ma, ma, angle,
+                         facecolor='none', edgecolor='r')
+#           # make ellipse for the inner encoding ring
+#           e3 = Ellipse((ell2.x, ell2.y), ell2.Ma*(0.5), ell2.ma*(0.5),
+#                        ell2.angle+90, facecolor='none', edgecolor='b')
+#           # make ellipse for the outer encoding ring
+#           e4 = Ellipse((ell2.x, ell2.y), ell2.Ma*(0.9), ell2.ma*(0.9),
+#                        ell2.angle+90, facecolor='none', edgecolor='b')
+            ax1.add_artist(e1)
+#           ax1.add_artist(e2)
+#           ax1.add_artist(e3)
+#           ax1.add_artist(e4)
+            plt.xlim(x-intMa, x+intMa)
+            plt.ylim(y-intMa, y+intMa)
+            plt.title(encoding)
+
+            # TODO Roll the array so that the minimum of the outer ring is
+            # at the start of the array, then calculate the values in the 12 bits
+
+            plt.show()
+
+        return encoding
+
+    def find_targets(self):
         ''' Finds all the targets on itself
         '''
 
@@ -54,33 +119,15 @@ class Image(object):
         ellipses, hulls = self._find_ellipses()
         self.ellipses = ellipses
 
-        # going to use the kdtree to find the ellipses nearest to the squares
-        kdtree = self._create_ellipse_kdtree(ellipses)
-        for square in self.square_contours:
-            # calculate the centroid
-            M = cv2.moments(square.vertices)
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
-            square_area = M['m00']
-            nearest = kdtree.query_ball_point(np.array([cx, cy]), 20)
-            # we want the biggest ellipse that is close AND smaller than square
-            biggest_neighbour_size = 0.0
-            biggest_neighbour = None
-            for nth in nearest:
-                (x, y), (Ma, ma), angle = ellipses[nth]
-                size = np.pi*Ma*ma/4.0
-                if (size > biggest_neighbour_size) & (size < square_area):
-                    biggest_neighbour = nth
-                    biggest_neighbour_size = size
+        radtargets = []
+        for ell in self.ellipses:
+            (x, y), (Ma, ma), angle = ell
+            outer_ring = (x, y), (0.85*Ma, 0.85*ma), angle
+            outer_enc = self.find_rad_encoding(self.threshold, outer_ring)
+            if (outer_enc == "011111111111"):
+                radtargets.append(ell)
 
-            if not biggest_neighbour:
-                continue
-
-
-
-        print "Ellipses", len(ellipses)
-        print "Squares", len(self.square_contours)
-        print "Targets", len(self.targets)
+        self.radtargets = radtargets
 
     def _find_ellipses(self):
         ''' finds all the ellipses in the image
@@ -99,9 +146,35 @@ class Image(object):
                 ellipses.append(ellipse)
                 hulls.append(hulls)
 
+        MaMax = 100
+        maMax = 100
+        MaMin = 8
+        maMin = 8
+        Ma_ma = 5
+
+        for i, ell in enumerate(ellipses):
+            (x,y), (Ma, ma), angle = ell
+            Ma = max(Ma, ma)/2.0
+            ma = min(Ma, ma)/2.0
+
+            if (Ma > MaMax) or (Ma < MaMin):
+                del ellipses[i]
+                del hulls[i]
+                continue
+
+            if (ma > maMax) or (ma < maMin):
+                del ellipses[i]
+                del hulls[i]
+                continue
+
+            if float(Ma) / float(ma) > Ma_ma:
+                del ellipses[i]
+                del hulls[i]
+                continue
+
         return ellipses, hulls
 
-    def get_threshold(self, d=5, sigmaColor=75, sigmaSpace=75, size=21, C=2):
+    def get_threshold(self, d=8, sigmaColor=75, sigmaSpace=75, size=21, C=2):
         '''
         Returns the threshold of the image.
         Inputs:
@@ -141,12 +214,6 @@ class Image(object):
         ''' Find the ones that is approximately square
         '''
 
-        if self.square_contours is not None:
-            return self.square_contours
-
-        if self.contours is None:
-            self.contours = self.get_contours()
-
         squares = []
         for cnt in self.contours:
             area = abs(cv2.contourArea(cnt))
@@ -163,3 +230,45 @@ class Image(object):
             squares.append(square)
 
         return squares
+
+
+    def find_imval_at_ellipse_coordinates(self, img, ellipse, n=100):
+        ''' Given rotated ellipse, return n coordinates along its perimeter '''
+        # x=acos(theta) y=bsin(theta)
+        theta = (ellipse.angle + 90)*np.pi/180.
+        angles = np.linspace(0, 2*np.pi, n)
+        # center of ellipse
+        x0, y0 = ellipse.x, ellipse.y
+
+        x = ellipse.Ma/2.0*np.cos(angles)
+        y = ellipse.ma/2.0*np.sin(angles)
+
+        xy = np.array([(x[i], y[i]) for i, xx in enumerate(x)]).T
+        # rotation matrix
+        rotMat = np.array([[np.sin(theta), -1.0*np.cos(theta)],
+                           [np.cos(theta), np.sin(theta)]])
+
+        rotatedXY = np.dot(rotMat, xy).T
+
+        rotatedXY[:, 0] += y0
+        rotatedXY[:, 1] += x0
+        # round to ints
+        rotatedXY = np.around(rotatedXY, 0)
+
+        # find image values
+        imval = []
+        for row in rotatedXY:
+            x, y = row[0], row[1]
+            try:
+                imval.append(img[x, y])
+            except IndexError:
+                imval.append(0)
+
+        imval = np.array(imval)
+        # regions are either high or low. make high regions = 255 and low
+        # regions == 1.0
+        imval_max = imval.max()
+
+        imval[imval > 0.25*imval_max] = 255
+        imval[imval <= 0.25*imval_max] = 0
+        return rotatedXY, angles, np.array(imval)
