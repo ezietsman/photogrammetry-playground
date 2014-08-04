@@ -274,8 +274,9 @@ if __name__ == "__main__":
             for ell in image.smalltargets:
                 (x, y), (Ma, ma), angle = ell
                 ell = Ellipse([x, y], Ma, ma, angle,
-                              facecolor='b',
-                              edgecolor='r')
+                              facecolor='none',
+                              edgecolor='b',
+                              linewidth=2)
                 ax1.add_artist(ell)
 
 
