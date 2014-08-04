@@ -47,6 +47,15 @@ class Image(object):
 
         return kdtree
 
+    def find_target_crossection(self, img, candidate):
+        '''
+        Calculate the cross-section of a candidate target to see if it is
+        a dot-target or a RAD target.
+
+        Candidate: (x, y), (Ma, ma), angle of candidate ellipse
+        '''
+
+
     def find_rad_encoding(self, img, radtarget, plot=False):
         ''' given an image and a rad target ellipse pair, find the encoding used
 
@@ -120,6 +129,7 @@ class Image(object):
         self.ellipses = ellipses
 
         radtargets = []
+        smalltargets = []
         for ell in self.ellipses:
             (x, y), (Ma, ma), angle = ell
             outer_ring = (x, y), (0.85*Ma, 0.85*ma), angle
@@ -128,6 +138,16 @@ class Image(object):
                 radtargets.append(ell)
 
         self.radtargets = radtargets
+
+        for sq in self.square_contours:
+            for ell in self.ellipses:
+                (x, y), (Ma, ma), angle = ell
+                Ma = max(Ma, ma)
+                if sq.containsPoint((x, y)) > 0:
+                    if (0.5*sq.longside > Ma/2.) and (Ma/2.0 > 0.2*sq.longside):
+                        smalltargets.append(ell)
+
+        self.smalltargets = smalltargets
 
     def _find_ellipses(self):
         ''' finds all the ellipses in the image
@@ -146,31 +166,31 @@ class Image(object):
                 ellipses.append(ellipse)
                 hulls.append(hulls)
 
-        MaMax = 100
-        maMax = 100
-        MaMin = 8
-        maMin = 8
-        Ma_ma = 5
+#       MaMax = 100
+#       maMax = 100
+#       MaMin = 4
+#       maMin = 4
+#       Ma_ma = 5
 
-        for i, ell in enumerate(ellipses):
-            (x,y), (Ma, ma), angle = ell
-            Ma = max(Ma, ma)/2.0
-            ma = min(Ma, ma)/2.0
+#       for i, ell in enumerate(ellipses):
+#           (x,y), (Ma, ma), angle = ell
+#           Ma = max(Ma, ma)/2.0
+#           ma = min(Ma, ma)/2.0
 
-            if (Ma > MaMax) or (Ma < MaMin):
-                del ellipses[i]
-                del hulls[i]
-                continue
+#           if (Ma > MaMax) or (Ma < MaMin):
+#               del ellipses[i]
+#               del hulls[i]
+#               continue
 
-            if (ma > maMax) or (ma < maMin):
-                del ellipses[i]
-                del hulls[i]
-                continue
+#           if (ma > maMax) or (ma < maMin):
+#               del ellipses[i]
+#               del hulls[i]
+#               continue
 
-            if float(Ma) / float(ma) > Ma_ma:
-                del ellipses[i]
-                del hulls[i]
-                continue
+#           if float(Ma) / float(ma) > Ma_ma:
+#               del ellipses[i]
+#               del hulls[i]
+#               continue
 
         return ellipses, hulls
 

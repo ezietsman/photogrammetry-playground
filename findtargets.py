@@ -12,7 +12,6 @@ from libphotogrammetry.Image import Image
 
 
 
-
 def get_contours(img):
     ''' Get contours in given image
 
@@ -253,6 +252,7 @@ if __name__ == "__main__":
         image.find_targets()
 
         print("    found {n} RAD targets!".format(n=len(image.radtargets)))
+        print("    found {n} Small targets!".format(n=len(image.smalltargets)))
 
         if arguments['--plot'] or arguments['--save']:
             fig = plt.figure(figsize=(12, 12))
@@ -263,6 +263,21 @@ if __name__ == "__main__":
 #               vertices = sq.vertices
 #               vertices = np.append(vertices, vertices[0]).reshape((5,2))
 #               plt.plot(vertices[:,0], vertices[:,1], 'b-')
+
+#           for ell in image.ellipses:
+#               (x, y), (Ma, ma), angle = ell
+#               ell = Ellipse([x, y], Ma, ma, angle,
+#                             facecolor='none',
+#                             edgecolor='y')
+#               ax1.add_artist(ell)
+
+            for ell in image.smalltargets:
+                (x, y), (Ma, ma), angle = ell
+                ell = Ellipse([x, y], Ma, ma, angle,
+                              facecolor='b',
+                              edgecolor='r')
+                ax1.add_artist(ell)
+
 
             for ell in image.radtargets:
                 (x, y), (Ma, ma), angle = ell
