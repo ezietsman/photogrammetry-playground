@@ -1,0 +1,4 @@
+Distance check
+Point 33->48 1.839
+Point 35->27 1.825m
+50->31 1.795
