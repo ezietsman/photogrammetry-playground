@@ -262,7 +262,7 @@ if __name__ == "__main__":
 #           for sq in image.square_contours:
 #               vertices = sq.vertices
 #               vertices = np.append(vertices, vertices[0]).reshape((5,2))
-#               plt.plot(vertices[:,0], vertices[:,1], 'b-')
+#               plt.plot(vertices[:,0], vertices[:,1], 'b-', linewidth=3)
 
 #           for ell in image.ellipses:
 #               (x, y), (Ma, ma), angle = ell

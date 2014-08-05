@@ -47,15 +47,6 @@ class Image(object):
 
         return kdtree
 
-    def find_target_crossection(self, img, candidate):
-        '''
-        Calculate the cross-section of a candidate target to see if it is
-        a dot-target or a RAD target.
-
-        Candidate: (x, y), (Ma, ma), angle of candidate ellipse
-        '''
-
-
     def find_rad_encoding(self, img, radtarget, plot=False):
         ''' given an image and a rad target ellipse pair, find the encoding used
 
@@ -63,10 +54,13 @@ class Image(object):
 
         '''
         (x, y), (Ma, ma), angle = radtarget
-        ring = ellipse(x, y, Ma, ma, angle)
+        outer = ellipse(x, y, 0.85*Ma, 0.85*ma, angle)
+        inner = ellipse(x, y, 0.6*Ma, 0.6*ma, angle)
 
         pouter, theta_outer, imval_outer =\
-            self.find_imval_at_ellipse_coordinates(img, ring, n=200)
+            self.find_imval_at_ellipse_coordinates(img, outer, n=200)
+        pinner, theta_inner, imval_inner =\
+            self.find_imval_at_ellipse_coordinates(img, inner, n=200)
 
         try:
             # get the angles where the image value along the ellipse is zero
@@ -76,6 +70,8 @@ class Image(object):
             # now roll the array so that it start at that index
             imval_outer = np.roll(imval_outer, -start)
             imval_outer_split = np.array_split(imval_outer, 12)
+            imval_inner = np.roll(imval_inner, -start)
+            imval_inner_split = np.array_split(imval_inner, 12)
             # now split that array into 12 nearly equally sized pieces
             # the median value should be either 255 or 0, calculate the encoding
             for i, segment in enumerate(imval_outer_split):
@@ -83,10 +79,18 @@ class Image(object):
                     imval_outer_split[i] = '1'
                 else:
                     imval_outer_split[i] = '0'
-            encoding = ''.join(imval_outer_split)
+            outer_enc = ''.join(imval_outer_split)
+            # same for inner
+            for i, segment in enumerate(imval_inner_split):
+                if np.median(segment) == 255:
+                    imval_inner_split[i] = '1'
+                else:
+                    imval_inner_split[i] = '0'
+            inner_enc = ''.join(imval_inner_split)
+
         except ValueError as ve:
             #print ve
-            encoding = '999999999999'
+            outer_enc, inner_enc = '999999999999', '999999999999'
 
         # some bug fixing plots
         if plot:
@@ -116,7 +120,7 @@ class Image(object):
 
             plt.show()
 
-        return encoding
+        return outer_enc, inner_enc
 
     def find_targets(self):
         ''' Finds all the targets on itself
@@ -132,10 +136,10 @@ class Image(object):
         smalltargets = []
         for ell in self.ellipses:
             (x, y), (Ma, ma), angle = ell
-            outer_ring = (x, y), (0.85*Ma, 0.85*ma), angle
-            outer_enc = self.find_rad_encoding(self.threshold, outer_ring)
+            outer_enc, inner_enc = self.find_rad_encoding(self.threshold, ell)
             if (outer_enc == "011111111111"):
-                radtargets.append(ell)
+                if inner_enc.startswith('1'):
+                    radtargets.append(ell)
 
         self.radtargets = radtargets
 
@@ -146,6 +150,22 @@ class Image(object):
                 if sq.containsPoint((x, y)) > 0:
                     if (0.5*sq.longside > Ma/2.) and (Ma/2.0 > 0.2*sq.longside):
                         smalltargets.append(ell)
+
+        small_target_kdtree = self._create_ellipse_kdtree(smalltargets)
+        # now go through the rad targets and remove the smalltargets inside
+        _to_remove = []
+        for rad in self.radtargets:
+            (x, y), (Ma, ma), angle = rad
+            # find the small targets within one major axis from rad center
+            nearest = small_target_kdtree.query_ball_point((x,y), Ma/2.)
+            for n in nearest:
+                _to_remove.append(smalltargets[n])
+
+        for rem in _to_remove:
+            try:
+                smalltargets.remove(rem)
+            except:
+                pass
 
         self.smalltargets = smalltargets
 
@@ -168,9 +188,9 @@ class Image(object):
 
 #       MaMax = 100
 #       maMax = 100
-#       MaMin = 4
+#       MaMin = 7
 #       maMin = 4
-#       Ma_ma = 5
+#       Ma_ma = 4
 
 #       for i, ell in enumerate(ellipses):
 #           (x,y), (Ma, ma), angle = ell
@@ -194,7 +214,7 @@ class Image(object):
 
         return ellipses, hulls
 
-    def get_threshold(self, d=8, sigmaColor=75, sigmaSpace=75, size=21, C=2):
+    def get_threshold(self, d=5, sigmaColor=75, sigmaSpace=75, size=21, C=2):
         '''
         Returns the threshold of the image.
         Inputs:
