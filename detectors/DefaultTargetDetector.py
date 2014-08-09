@@ -1,34 +1,12 @@
-import copy
-
-import scipy.spatial
-import numpy as np
 import cv2
+import numpy as np
+import scipy
 
-from Target import Ellipse as _Ellipse
+from TargetDetectorBase import TargetDetectorBase
 from Target import Square
+from Target import Ellipse as _Ellipse
 
-class TargetDetector(object):
-    '''
-    Generic Target Detector Class
-
-    Inherit from this to write a new detector
-
-    '''
-
-    def __init__(self, image=None):
-        if image:
-            self.image = cv2.imread(image, 0)
-        self.targets = None
-
-    def find_targets(self, image):
-        '''
-        Routine that finds the targets
-        '''
-        if self.targets:
-            return self.find_targets
-
-
-class DefaulDetector(TargetDetector):
+class DefaultDetector(TargetDetectorBase):
 
     '''
     Finds targets by calculating an adaptive thresholded image, on which it
@@ -46,10 +24,10 @@ class DefaulDetector(TargetDetector):
     '''
 
     def __init__(self, image=None):
-        super(DefaulDetector, self).__init__(image)
-        self.detector_name = 'DefaulDetector'
+        super(DefaultDetector, self).__init__(image)
+        self.detector_name = 'DefaultDetector'
         self.threshold = self.get_threshold()
-        self.contours = self.get_contours()
+        self.contours_hierarchy = self.get_contours()
         self.square_contours = self.find_square_contours()
 
     def _find_ellipses(self):
@@ -58,7 +36,8 @@ class DefaulDetector(TargetDetector):
         ellipses = []
         hulls = []
         # for each contour, fit an ellipse
-        for i, cnt in enumerate(self.contours):
+        for i, ch in enumerate(self.contours_hierarchy):
+            cnt = ch[0]
             # get convex hull of contour
             hull = cv2.convexHull(cnt, returnPoints=True)
             # defects = cv2.convexityDefects(cnt, hull)
@@ -99,7 +78,7 @@ class DefaulDetector(TargetDetector):
                     if 0.5*sq.longside > Ma/2.0:
                         if Ma/2.0 > 0.2*sq.longside:
                             smalltargets.append(ell)
-
+        import ipdb; ipdb.set_trace()
         small_target_kdtree = self._create_ellipse_kdtree(smalltargets)
         # now go through the rad targets and remove the smalltargets inside
         _to_remove = []
@@ -117,38 +96,6 @@ class DefaulDetector(TargetDetector):
                 pass
 
         self.smalltargets = smalltargets
-
-
-    def get_threshold(self, d=5, sigmaColor=75, sigmaSpace=75, size=21, C=2):
-        '''
-        Returns the threshold of the image.
-        Inputs:
-        d, sigmaColor, sigmaSpace:
-            See http://docs.opencv.org/modules/imgproc/doc/filtering.html?highlight=bilateralfilter#bilateralfilter
-        size, C:
-            see: http://docs.opencv.org/modules/imgproc/doc/miscellaneous_transformations.html?highlight=adaptivethreshold#cv2.adaptiveThreshold
-
-        Returns threshold image with value 255 above threshold and 0 below
-        '''
-        blur = cv2.bilateralFilter(self.image, d, sigmaColor, sigmaSpace)
-        thresh = cv2.adaptiveThreshold(blur, 255,
-                                       cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                       cv2.THRESH_BINARY, size, C)
-        return thresh
-
-
-    def get_contours(self):
-        ''' Get contours in given image
-
-        '''
-        threshold = copy.deepcopy(self.threshold)
-        contours, hierarchy = cv2.findContours(threshold,
-                                               cv2.RETR_TREE,
-                                               cv2.CHAIN_APPROX_SIMPLE)
-        # filter out short ones
-        contours = [cnt for cnt in contours if len(cnt) > 10]
-
-        return contours
 
     def find_rad_encoding(self, img, radtarget, plot=False):
         ''' given an image and a rad target ellipse pair, find the encoding used
@@ -287,7 +234,8 @@ class DefaulDetector(TargetDetector):
         '''
 
         squares = []
-        for cnt in self.contours:
+        for ch in self.contours_hierarchy:
+            cnt = ch[0]
             area = abs(cv2.contourArea(cnt))
             err = epsilon*cv2.arcLength(cnt, True)
             hull = cv2.convexHull(cnt)
