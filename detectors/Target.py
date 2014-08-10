@@ -58,8 +58,11 @@ class Target(object):
     Represents a target.
     '''
 
-    def __init__(self, x, y):
-        pass
+    def __init__(self, x, y, type='default', encoding=None):
+        self.x = x
+        self.y = y
+        self.type = type
+        self.encoding = encoding
 
 
 class Ellipse:

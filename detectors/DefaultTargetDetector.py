@@ -5,6 +5,7 @@ import scipy
 from TargetDetectorBase import TargetDetectorBase
 from Target import Square
 from Target import Ellipse as _Ellipse
+import Target
 
 class DefaultDetector(TargetDetectorBase):
 
@@ -64,8 +65,10 @@ class DefaultDetector(TargetDetectorBase):
             (x, y), (Ma, ma), angle = ell
             outer_enc, inner_enc = self.find_rad_encoding(self.threshold, ell)
             if (outer_enc == "011111111111"):
-                if inner_enc.startswith('1'):
-                    radtargets.append(ell)
+                if (inner_enc.startswith('1')) and (inner_enc != '1'*12):
+                    target = Target.Target(x, y, 'RAD', inner_enc)
+                    target.ellipse = ell
+                    radtargets.append(target)
 
         self.radtargets = radtargets
 
@@ -76,14 +79,15 @@ class DefaultDetector(TargetDetectorBase):
                 Ma = max(Ma, ma)
                 if sq.containsPoint((x, y)) > 0:
                     if 0.5*sq.longside > Ma/2.0:
-                        if Ma/2.0 > 0.2*sq.longside:
-                            smalltargets.append(ell)
-        import ipdb; ipdb.set_trace()
+                        if Ma/2.0 > 0.15*sq.longside:
+                            target = Target.Target(x, y, 'circle', 'none')
+                            target.ellipse = ell
+                            smalltargets.append(target)
         small_target_kdtree = self._create_ellipse_kdtree(smalltargets)
         # now go through the rad targets and remove the smalltargets inside
         _to_remove = []
         for rad in self.radtargets:
-            (x, y), (Ma, ma), angle = rad
+            (x, y), (Ma, ma), angle = rad.ellipse
             # find the small targets within one major axis from rad center
             nearest = small_target_kdtree.query_ball_point((x,y), Ma/2.)
             for n in nearest:
@@ -172,15 +176,15 @@ class DefaultDetector(TargetDetectorBase):
 
         return outer_enc, inner_enc
 
-    def _create_ellipse_kdtree(self, ellipses):
+    def _create_ellipse_kdtree(self, targets):
         ''' Given list of ellipses as return from _find_ellipses
             return the kd-tree made from their coordinates
         '''
 
-        data = np.zeros((len(ellipses), 2), dtype='float')
+        data = np.zeros((len(targets), 2), dtype='float')
 
-        for i, ellipse in enumerate(ellipses):
-            (x, y), (Ma, ma), angle = ellipse
+        for i, target in enumerate(targets):
+            (x, y), (Ma, ma), angle = target.ellipse
             data[i, 0] = x
             data[i, 1] = y
 

@@ -52,5 +52,5 @@ class TargetDetectorBase(object):
                                                cv2.CHAIN_APPROX_SIMPLE)
         ch = zip(contours, hierarchy[0])
         # filter out short ones and keep inner ones only
-        contours = [cnt for cnt in ch if len(cnt[0]) > 10 and cnt[1][2] < 0]
+        contours = [cnt for cnt in ch if len(cnt[0]) > 10]
         return contours
