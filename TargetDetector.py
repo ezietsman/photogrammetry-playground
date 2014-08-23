@@ -3,9 +3,12 @@ import copy
 import scipy.spatial
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
+import matplotlib
 
 from Target import Ellipse as _Ellipse
 from Target import Square
+
 
 class TargetDetector(object):
     '''
@@ -28,7 +31,7 @@ class TargetDetector(object):
             return self.find_targets
 
 
-class DefaulDetector(TargetDetector):
+class DefaultDetector(TargetDetector):
 
     '''
     Finds targets by calculating an adaptive thresholded image, on which it
@@ -46,8 +49,8 @@ class DefaulDetector(TargetDetector):
     '''
 
     def __init__(self, image=None):
-        super(DefaulDetector, self).__init__(image)
-        self.detector_name = 'DefaulDetector'
+        super(DefaultDetector, self).__init__(image)
+        self.detector_name = 'DefaultDetector'
         self.threshold = self.get_threshold()
         self.contours = self.get_contours()
         self.square_contours = self.find_square_contours()
@@ -81,12 +84,20 @@ class DefaulDetector(TargetDetector):
         self.ellipses = ellipses
 
         radtargets = []
+
         for ell in self.ellipses:
             (x, y), (Ma, ma), angle = ell
+            Ma, ma = max(Ma, ma), min(Ma, ma)
+            if Ma/ma > 3.5:
+                continue
+            if Ma < 15:
+                continue
             outer_enc, inner_enc = self.find_rad_encoding(self.threshold, ell)
-            if (outer_enc == "011111111111"):
-                if inner_enc.startswith('1'):
-                    radtargets.append(ell)
+            if not (outer_enc == "011111111111"):
+                continue
+            if not inner_enc.startswith('1'):
+                continue
+            radtargets.append(((x, y), (ma, Ma), angle))
 
         self.radtargets = radtargets
 
@@ -95,9 +106,10 @@ class DefaulDetector(TargetDetector):
             for ell in self.ellipses:
                 (x, y), (Ma, ma), angle = ell
                 Ma = max(Ma, ma)
+                ma = min(Ma, ma)
                 if sq.containsPoint((x, y)) > 0:
-                    if 0.5*sq.longside > Ma/2.0:
-                        if Ma/2.0 > 0.2*sq.longside:
+                    if sq.longside > Ma:
+                        if sq.shortside > ma:
                             smalltargets.append(ell)
 
         small_target_kdtree = self._create_ellipse_kdtree(smalltargets)
@@ -106,7 +118,7 @@ class DefaulDetector(TargetDetector):
         for rad in self.radtargets:
             (x, y), (Ma, ma), angle = rad
             # find the small targets within one major axis from rad center
-            nearest = small_target_kdtree.query_ball_point((x,y), Ma/2.)
+            nearest = small_target_kdtree.query_ball_point((x, y), Ma/2.)
             for n in nearest:
                 _to_remove.append(smalltargets[n])
 
@@ -117,7 +129,6 @@ class DefaulDetector(TargetDetector):
                 pass
 
         self.smalltargets = smalltargets
-
 
     def get_threshold(self, d=5, sigmaColor=75, sigmaSpace=75, size=21, C=2):
         '''
@@ -135,7 +146,6 @@ class DefaulDetector(TargetDetector):
                                        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                        cv2.THRESH_BINARY, size, C)
         return thresh
-
 
     def get_contours(self):
         ''' Get contours in given image
@@ -168,15 +178,19 @@ class DefaulDetector(TargetDetector):
         try:
             # get the angles where the image value along the ellipse is zero
             theta_min = np.min(theta_outer[imval_outer == 0]*180/np.pi)
+
             # find the index of the smallest angle where this is true
             start = np.where(theta_outer*180/np.pi == theta_min)[0][0]
+
             # now roll the array so that it start at that index
             imval_outer = np.roll(imval_outer, -start)
             imval_outer_split = np.array_split(imval_outer, 12)
             imval_inner = np.roll(imval_inner, -start)
             imval_inner_split = np.array_split(imval_inner, 12)
+
             # now split that array into 12 nearly equally sized pieces
-            # the median value should be either 255 or 0, calculate the encoding
+            # the median value should be either 255 or 0, calculate the
+            # encoding
             for i, segment in enumerate(imval_outer_split):
                 if np.median(segment) == 255:
                     imval_outer_split[i] = '1'
@@ -191,37 +205,8 @@ class DefaulDetector(TargetDetector):
                     imval_inner_split[i] = '0'
             inner_enc = ''.join(imval_inner_split)
 
-        except ValueError as ve:
-            #print ve
+        except ValueError:
             outer_enc, inner_enc = '999999999999', '999999999999'
-
-        # some bug fixing plots
-        if plot:
-            fig = plt.figure(figsize=(12, 12))
-            ax1 = fig.add_subplot(111, aspect='equal')
-            intMa = int(Ma)
-            plt.imshow(img, cmap=matplotlib.cm.gray, interpolation='nearest')
-            ell1 = radtarget
-            e1 = matplotlib.patches.Ellipse((x, y), Ma, ma, angle,
-                         facecolor='none', edgecolor='r')
-#           # make ellipse for the inner encoding ring
-#           e3 = Ellipse((ell2.x, ell2.y), ell2.Ma*(0.5), ell2.ma*(0.5),
-#                        ell2.angle+90, facecolor='none', edgecolor='b')
-#           # make ellipse for the outer encoding ring
-#           e4 = Ellipse((ell2.x, ell2.y), ell2.Ma*(0.9), ell2.ma*(0.9),
-#                        ell2.angle+90, facecolor='none', edgecolor='b')
-            ax1.add_artist(e1)
-#           ax1.add_artist(e2)
-#           ax1.add_artist(e3)
-#           ax1.add_artist(e4)
-            plt.xlim(x-intMa, x+intMa)
-            plt.ylim(y-intMa, y+intMa)
-            plt.title(encoding)
-
-            # TODO Roll the array so that the minimum of the outer ring is
-            # at the start of the array, then calculate the values in the 12 bits
-
-            plt.show()
 
         return outer_enc, inner_enc
 
